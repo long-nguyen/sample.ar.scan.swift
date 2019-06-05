@@ -16,12 +16,14 @@ struct ObjectInfo {
     let name: String
 }
 
+let objectURL = "https://dl.dropboxusercontent.com/s/kvt454j7mm7najb/long_bag.arobject"
+
 class ViewController: UIViewController {
 
     @IBOutlet var sceneView: ARSCNView!
     private var worldConf: ARWorldTrackingConfiguration?
     private let objectInfo = ObjectInfo(facts: ["My Bag", "Very clean", "Very stable, used for 4 years"], titlePos: (x: -0.2, y: 0.2), name: "Long's Bag")
-    
+
     override func viewDidLoad() {
         super.viewDidLoad()
         self.initView()
@@ -30,14 +32,23 @@ class ViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        if let configuration = worldConf {
-            sceneView.session.run(configuration)
+        if self.isObjectAvailable() {
+            self.loadLocalObject()
+            self.startSession()
+        } else {
+            self.fetchObject()
         }
     }
     
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         sceneView.session.pause()
+    }
+    
+    private func startSession() {
+        if let configuration = worldConf {
+            sceneView.session.run(configuration)
+        }
     }
     
     private func initView() {
@@ -50,13 +61,80 @@ class ViewController: UIViewController {
         guard let refImage = ARReferenceImage.referenceImages(inGroupNamed: "AR Images", bundle: nil) else {
             fatalError("No image")
         }
-
-        guard let refObjects = ARReferenceObject.referenceObjects(inGroupNamed: "AR objects", bundle: nil) else {
-            fatalError("No object")
-        }
-       
-        worldConf?.detectionObjects = refObjects
         worldConf?.detectionImages = refImage
+
+        //Load file from bundle
+//        guard let refObjects = ARReferenceObject.referenceObjects(inGroupNamed: "AR objects", bundle: nil) else {
+//            fatalError("No object")
+//        }
+//        worldConf?.detectionObjects = refObjects
+        
+    }
+    
+    private func isObjectAvailable() ->Bool {
+        let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0] as String
+        let url = NSURL(fileURLWithPath: path)
+        if let pathComponent = url.appendingPathComponent("long_bag.arobject") {
+            let filePath = pathComponent.path
+            let fileManager = FileManager.default
+            if fileManager.fileExists(atPath: filePath) {
+                return true
+            }
+        }
+        return false
+    }
+    
+    private func loadLocalObject() {
+        let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0] as String
+        let url = NSURL(fileURLWithPath: path)
+        if let pathComponent = url.appendingPathComponent("long_bag.arobject") {
+            if let refObjects = try? ARReferenceObject(archiveURL: pathComponent.absoluteURL) {
+                worldConf?.detectionObjects = [refObjects]
+            }
+        }
+    }
+    
+    //DOwnload file from internet then add it to arscene
+    private func fetchObject() {
+        self.downloadFile { (result) in
+            if result {
+                self.loadLocalObject()
+                self.startSession()
+            }
+        }
+    }
+    
+    private func downloadFile(_ completion: @escaping (Bool)->Void ) {
+        let sessionConfig = URLSessionConfiguration.default
+        let session = URLSession(configuration: sessionConfig, delegate: nil, delegateQueue: nil)
+        var request = URLRequest(url: URL(string: objectURL)!)
+        request.httpMethod = "GET"
+        let task = session.dataTask(with: request) { (data, response, error) in
+            if (error == nil) {
+                // Success
+                DispatchQueue.main.async {
+                    
+                    //Store file
+                    let path = NSSearchPathForDirectoriesInDomains(.documentDirectory, .userDomainMask, true)[0] as String
+                    let url = NSURL(fileURLWithPath: path)
+                    if let pathComponent = url.appendingPathComponent("long_bag.arobject"), let dt = data as NSData? {
+                        let filePath = pathComponent.absoluteURL
+                        if dt.write(to: filePath, atomically: true) {
+                            completion(true)
+                        } else {
+                            completion(false)
+                        }
+                    } else {
+                        completion(false)
+                    }
+                }
+            }
+            else {
+                // Failure
+                completion(false)
+            }
+        }
+        task.resume()
     }
   
 }
@@ -68,9 +146,9 @@ extension ViewController: ARSessionDelegate {
         }
         switch code {
         case .cameraUnauthorized:
-            NSLog("camera need permission")
+            print("camera need permission")
         default:
-            NSLog("Unknown error")
+            print("Unknown error")
         }
     }
     
